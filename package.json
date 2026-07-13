@@ -24,7 +24,7 @@
     "devvit": "0.13.6",
     "hono": "4.12.27",
     "matter-js": "^0.20.0",
-    "phaser": "4.2.0"
+    "phaser": "4.2.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
