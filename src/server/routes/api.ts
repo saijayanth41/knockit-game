@@ -135,21 +135,6 @@ api.get('/presence', async (c) => {
 });
 
 /**
- * Explicit, user-initiated subscribe (userActions rules: distinct button,
- * never automated, never gates gameplay). Subscribes AS THE USER per the
- * SUBSCRIBE_TO_SUBREDDIT permission in devvit.json.
- */
-api.post('/subscribe', async (c) => {
-  try {
-    await reddit.subscribeToCurrentSubreddit();
-    return c.json({ status: 'success' });
-  } catch (error) {
-    console.error('subscribe failed:', error);
-    return c.json<ErrorResponse>({ status: 'error', message: 'failed to subscribe' }, 500);
-  }
-});
-
-/**
  * Server-authoritative shot.
  *
  * Order of enforcement:

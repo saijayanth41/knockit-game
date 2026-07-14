@@ -39,6 +39,8 @@ export class Game extends Scene {
   /** Ghost stone marking the spawn point while aiming. */
   private ghost!: Phaser.GameObjects.Arc;
   private aimGraphics!: Phaser.GameObjects.Graphics;
+  /** Pulsing red rings around the attacker's stones during a revenge shot. */
+  private revengeMarkers!: Phaser.GameObjects.Graphics;
   private statusText!: Phaser.GameObjects.Text;
 
   private isAiming = false;
@@ -127,15 +129,30 @@ export class Game extends Scene {
 
     this.aimGraphics = this.add.graphics().setDepth(5);
 
+    // Revenge target markers: red rings around the attacker's stones, pulsing
+    // so the eye is drawn straight to what you get to knock out.
+    this.revengeMarkers = this.add.graphics().setDepth(6);
+    this.tweens.add({
+      targets: this.revengeMarkers,
+      alpha: { from: 1, to: 0.3 },
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // Status/feedback line lives at the BOTTOM, clear of the top HUD row
+    // (leaderboard left, shots + presence right), so nothing overlaps.
     this.statusText = this.add
-      .text(BOARD.centerX, 40, 'Loading board…', {
+      .text(BOARD.centerX, BOARD.height - 34, 'Loading board…', {
         fontFamily: 'Arial Black',
         fontSize: 22,
         color: '#ffffff',
         stroke: '#000000',
         strokeThickness: 6,
+        align: 'center',
+        wordWrap: { width: BOARD.width - 80 },
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 1)
       .setDepth(10);
 
     this.shotsRemaining = 0; // unknown until the server answers
@@ -183,7 +200,7 @@ export class Game extends Scene {
       .setDepth(10)
       .setInteractive({ useHandCursor: true });
     this.presenceList = this.add
-      .text(BOARD.width - 24, 148, '', {
+      .text(BOARD.width - 24, 108, '', {
         fontFamily: 'Courier',
         fontSize: 16,
         color: '#ffffff',
@@ -197,31 +214,6 @@ export class Game extends Scene {
     this.presenceChip.on('pointerup', () => {
       this.presenceExpanded = !this.presenceExpanded;
       this.presenceList.setVisible(this.presenceExpanded && this.presenceList.text.length > 0);
-    });
-
-    // Explicit opt-in subscribe button (userActions compliance: its own
-    // distinct action, never automatic, never gates play).
-    const joinBtn = this.add
-      .text(BOARD.width - 24, 104, '➕ Join the rink', {
-        fontFamily: 'Arial Black',
-        fontSize: 18,
-        color: '#ffffff',
-        backgroundColor: '#1a4d8f',
-        padding: { x: 10, y: 6 } as Phaser.Types.GameObjects.Text.TextPadding,
-      })
-      .setOrigin(1, 0)
-      .setDepth(10)
-      .setInteractive({ useHandCursor: true });
-    joinBtn.on('pointerup', () => {
-      void (async () => {
-        try {
-          const res = await fetch('/api/subscribe', { method: 'POST' });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          joinBtn.setText('✓ Joined').setBackgroundColor('#1f7a5a').disableInteractive();
-        } catch {
-          this.setStatus('Subscribe failed — try again', '#ff8888');
-        }
-      })();
     });
 
     // Heartbeat: poll immediately, then every 15s (scene-scoped timer).
@@ -259,42 +251,61 @@ export class Game extends Scene {
   /** Onboarding copy (M3 spec). Tap anywhere to dismiss and start playing. */
   private showOnboarding(): void {
     const bg = this.add
-      .rectangle(BOARD.centerX, BOARD.centerY, 620, 420, 0x000000, 0.82)
-      .setStrokeStyle(2, 0xffffff, 0.4);
+      .rectangle(BOARD.centerX, BOARD.centerY, 660, 480, 0x000000, 0.85)
+      .setStrokeStyle(2, 0xf2b705, 0.5);
+    const title = this.add
+      .text(BOARD.centerX, BOARD.centerY - 200, 'KNOCKIT', {
+        fontFamily: 'Arial Black',
+        fontSize: 44,
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    const tagline = this.add
+      .text(BOARD.centerX, BOARD.centerY - 158, 'The board remembers everyone.', {
+        fontFamily: 'Arial Black',
+        fontSize: 20,
+        color: '#f2b705',
+      })
+      .setOrigin(0.5);
+    // Explicitly TEACH the hook here — a judge playing solo on a quiet board
+    // still learns what makes this game different, even if they can't feel it live.
     const text = this.add
       .text(
         BOARD.centerX,
-        BOARD.centerY - 20,
+        BOARD.centerY + 8,
         [
-          'Welcome to Knockit',
+          '3 stones a day. Drag back, release to shoot.',
+          'Land in the rings — the closer to gold, the more points.',
           '',
-          'You have three stones.',
-          'Drag to aim.',
-          'Release to shoot.',
-          'Land in the rings to score.',
+          'Points bank every HOUR your stones survive.',
+          'A knockout stops the clock but never robs the bank.',
           '',
-          'Every stone stays on the shared board.',
-          'Other Redditors can move your stones.',
+          'This board is SHARED. Your stones stay after you leave —',
+          'other Redditors knock them around while you\'re gone.',
           '',
-          'The board updates automatically as others play.',
+          '⚔ Knocked out of the rings? You get a REVENGE shot,',
+          'with the attacker\'s name on it.',
         ].join('\n'),
         {
-          fontFamily: 'Arial Black',
-          fontSize: 24,
+          fontFamily: 'Arial',
+          fontSize: 19,
           color: '#ffffff',
           align: 'center',
+          lineSpacing: 3,
         }
       )
       .setOrigin(0.5);
     const tapHint = this.add
-      .text(BOARD.centerX, BOARD.centerY + 170, 'tap to start', {
+      .text(BOARD.centerX, BOARD.centerY + 205, 'tap to play', {
         fontFamily: 'Arial Black',
         fontSize: 20,
         color: '#f2b705',
       })
       .setOrigin(0.5);
 
-    this.onboarding = this.add.container(0, 0, [bg, text, tapHint]).setDepth(30);
+    this.onboarding = this.add
+      .container(0, 0, [bg, title, tagline, text, tapHint])
+      .setDepth(30);
   }
 
   /** Can the player fire right now? Daily shots, or the revenge bonus. */
@@ -311,8 +322,8 @@ export class Game extends Scene {
       this.shotsText.setText('⚔ REVENGE SHOT').setColor('#f2b705');
       return;
     }
-    const flame = this.streak > 1 ? `  🔥${this.streak}` : '';
-    this.shotsText.setText(`Shots Remaining: ${this.shotsRemaining}${flame}`);
+    const flame = this.streak > 1 ? ` 🔥${this.streak}` : '';
+    this.shotsText.setText(`Shots: ${this.shotsRemaining}${flame}`);
     this.shotsText.setColor(this.shotsRemaining === 0 ? '#ff8888' : '#ffffff');
   }
 
@@ -353,18 +364,51 @@ export class Game extends Scene {
   private drawBoard(): void {
     const g = this.add.graphics();
     g.fillStyle(BOARD.backgroundColor, 1).fillRect(0, 0, BOARD.width, BOARD.height);
-    for (const ring of RINGS) {
+
+    // Rings, outer -> inner. Each ring shows its point value so a first-time
+    // player understands scoring at a glance (10-second clarity).
+    RINGS.forEach((ring, i) => {
       g.fillStyle(ring.color, 1).fillCircle(BOARD.centerX, BOARD.centerY, ring.radius);
-      g.lineStyle(2, 0xffffff, 0.35).strokeCircle(BOARD.centerX, BOARD.centerY, ring.radius);
-    }
+      // Brighter, thicker outline on the gold bullseye — it's the prize.
+      const isGold = i === RINGS.length - 1;
+      g.lineStyle(isGold ? 4 : 2, 0xffffff, isGold ? 0.7 : 0.3).strokeCircle(
+        BOARD.centerX,
+        BOARD.centerY,
+        ring.radius
+      );
+
+      // Point-value watermark at the top of each band, behind the stones.
+      const prevR = i === 0 ? 0 : RINGS[i - 1]!.radius;
+      const bandMid = (ring.radius + prevR) / 2;
+      this.add
+        .text(BOARD.centerX, BOARD.centerY - bandMid, `${ring.points}`, {
+          fontFamily: 'Arial Black',
+          fontSize: 30,
+          color: '#ffffff',
+        })
+        .setOrigin(0.5)
+        .setAlpha(0.28)
+        .setDepth(2);
+    });
+
+    // "PTS / HR" hint under the value labels, tiny — sells the accrual idea.
+    this.add
+      .text(BOARD.centerX, BOARD.centerY - 40, 'pts / hr', {
+        fontFamily: 'Arial Black',
+        fontSize: 13,
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.22)
+      .setDepth(2);
   }
 
-  /** Creates the Arc for a stone id (yours = orange, everyone else = grey). */
+  /** Creates the stone for a stone id (yours = orange, everyone else = grey). */
   private spawnSprite(id: string, x: number = SPAWN.x, y: number = SPAWN.y): Phaser.GameObjects.Arc {
     const isMine = id.startsWith(`${this.username}-`);
     const arc = this.add
       .circle(x, y, STONE.radius, isMine ? PLAYER_COLOR : STONE_COLOR)
-      .setStrokeStyle(2, 0x000000, 0.4)
+      .setStrokeStyle(3, 0x000000, 0.45)
       .setDepth(3);
     this.stoneSprites.set(id, arc);
     return arc;
@@ -384,6 +428,18 @@ export class Game extends Scene {
 
   private setStatus(msg: string, color = '#ffffff'): void {
     this.statusText.setText(msg).setColor(color);
+  }
+
+  /** Ring the attacker's stones in red while a revenge shot is available. */
+  private drawRevengeMarkers(): void {
+    this.revengeMarkers.clear();
+    if (!this.revenge.available || !this.revenge.against) return;
+    this.revengeMarkers.lineStyle(5, 0xff3b30, 1);
+    for (const [id, sprite] of this.stoneSprites) {
+      if (this.ownerById.get(id) === this.revenge.against) {
+        this.revengeMarkers.strokeCircle(sprite.x, sprite.y, STONE.radius + 9);
+      }
+    }
   }
 
   // ---------------------------------------------------------------- juice
@@ -588,6 +644,7 @@ export class Game extends Scene {
         this.playbackStoneId = shot.stoneId;
         this.impactShakeFired = false;
         this.isShooting = true;
+        this.revengeMarkers.clear(); // stones will move during playback
         this.ghost.setVisible(false);
         this.setStatus(`▶ u/${shot.owner} shoots…`, '#9be8c5');
       } else if (!this.isShooting) {
@@ -604,19 +661,20 @@ export class Game extends Scene {
       this.setBanked(data.banked);
       this.renderScores(data.scores);
       this.ghost.setVisible(!this.isShooting && this.canShoot());
+      if (!this.isShooting) this.drawRevengeMarkers();
 
       // Revenge banner outranks the routine status line — it's the hook.
       if (replaying) {
         /* keep the "u/X shoots…" line during replay */
       } else if (this.revenge.available) {
         const who = this.revenge.against ? `u/${this.revenge.against}` : 'Someone';
-        this.setStatus(`⚔ ${who} knocked your stone out — take your revenge shot!`, '#f2b705');
+        this.setStatus(`⚔ ${who} knocked you out — hit their red stones for revenge!`, '#f2b705');
+      } else if (this.shotsRemaining > 0 || this.revenge.available) {
+        this.setStatus('Drag the orange stone to aim — release to shoot');
+      } else if (this.loggedIn) {
+        this.setStatus('No shots left today — come back tomorrow');
       } else {
-        // Visible confirmation that the reload really happened, even when the
-        // board content is unchanged.
-        const at = new Date(data.board.updatedAt).toLocaleTimeString();
-        const alive = data.board.stones.filter((s) => s.alive).length;
-        this.setStatus(`u/${data.username} · ${alive} stones · updated ${at}`);
+        this.setStatus('Log in to Reddit to play');
       }
     } catch (error) {
       console.error('fetchBoard failed:', error);
@@ -792,6 +850,7 @@ export class Game extends Scene {
 
   private async shoot(shot: ShotRequest): Promise<void> {
     this.isShooting = true;
+    this.revengeMarkers.clear(); // board is about to change
     this.ghost.setVisible(false);
     this.setStatus('Shooting…');
 
@@ -848,6 +907,10 @@ export class Game extends Scene {
       this.pendingBoard = null;
     }
     this.isShooting = false;
+
+    // Refresh red target rings against the settled board (revenge may now be
+    // spent, or the attacker's stones may have moved).
+    this.drawRevengeMarkers();
 
     // Score payoff: floating "+N" where the stone settled.
     if (this.pendingScorePopup) {

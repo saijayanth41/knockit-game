@@ -41,11 +41,6 @@
   "triggers": {
     "onAppInstall": "/internal/triggers/on-app-install"
   },
-  "permissions": {
-    "reddit": {
-      "asUser": ["SUBSCRIBE_TO_SUBREDDIT"]
-    }
-  },
   "scheduler": {
     "tasks": {
       "daily-settle": {
